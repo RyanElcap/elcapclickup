@@ -55,6 +55,7 @@
       </div>
       <div class="text-center text-xs text-gray-400 mt-auto pt-6">
         Last updated: <span id="last-updated">just now</span>
+        <button id="refresh-button" class="bg-indigo-700 text-white px-4 py-2 rounded-md">Refresh</button>
       </div>
     </div>
   </div>
@@ -74,6 +75,7 @@
       try {
         const res = await fetch('/api/get-time');
         const data = await res.json();
+        console.log(data);
         return data.totalMs || 0;
       } catch(e) {
         console.error(e);
@@ -117,6 +119,8 @@
 
     refresh();
     setInterval(refresh, 60000);
+
+    document.getElementById('refresh-button').addEventListener('click', refresh);
   </script>
 </body>
 </html>
