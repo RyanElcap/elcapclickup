@@ -10,17 +10,40 @@ export default async function handler(req, res) {
     const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
   
-    const url = `https://api.clickup.com/api/v2/team/${TEAM_ID}/time_entries?start_date=${start}&end_date=${end}`;
+    // ←←← THIS IS THE IMPORTANT LINE ←←←
+    // assignee=0 = ALL team members (works if your token belongs to a Workspace Owner/Admin)
+    const url = `https://api.clickup.com/api/v2/team/${TEAM_ID}/time_entries?start_date=${start}&end_date=${end}&assignee=0&include_task_ids=true`;
   
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${TOKEN}` }
-    });
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${TOKEN}` }
+      });
   
-    const data = await response.json();
-    console.log(data);
-    let totalMs = 0;
-    (data.data || []).forEach(entry => totalMs += entry.duration || 0);
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("ClickUp API error:", response.status, errText);
+        return res.status(response.status).json({ error: `ClickUp returned ${response.status}` });
+      }
   
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(200).json({ totalMs });
+      const data = await response.json();
+      console.log("✅ Full ClickUp response received →", JSON.stringify(data).slice(0, 500) + "...");
+  
+      let totalMs = 0;
+      const entries = data.data || [];
+      
+      entries.forEach(entry => {
+        totalMs += Number(entry.duration) || 0;
+      });
+  
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.status(200).json({ 
+        totalMs,
+        totalHours: (totalMs / 3600000).toFixed(2),
+        entryCount: entries.length,
+        message: entries.length === 0 ? "No time entries found (check assignee or dates)" : `${entries.length} time entries found`
+      });
+    } catch (error) {
+      console.error("Server error:", error);
+      res.status(500).json({ error: error.message });
+    }
   }
