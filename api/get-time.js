@@ -17,6 +17,7 @@ export default async function handler(req, res) {
     });
   
     const data = await response.json();
+    console.log(data);
     let totalMs = 0;
     (data.data || []).forEach(entry => totalMs += entry.duration || 0);
   
