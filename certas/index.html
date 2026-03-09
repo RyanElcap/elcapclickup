@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Certas Summary</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .card { box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.08); }
+  </style>
+</head>
+<body class="bg-gray-50 p-6">
+  <div id="simulate-banner" class="hidden fixed top-0 left-0 right-0 bg-amber-200 text-amber-900 text-center py-2 text-sm font-medium z-10"></div>
+  <!-- Setup: shown when no config saved -->
+  <div id="setup-section" class="max-w-md mx-auto">
+    <div class="card bg-white rounded-3xl p-8">
+      <h2 class="text-2xl font-semibold mb-6">Initial setup</h2>
+      <p class="text-gray-500 text-sm mb-6">Set your list and hours once; we’ll remember them.</p>
+      <div class="space-y-4">
+        <div>
+          <label for="setup-list-id" class="block text-sm font-medium text-gray-700 mb-1">ClickUp List ID</label>
+          <input id="setup-list-id" type="text" placeholder="e.g. 901204547982" class="w-full border border-gray-300 rounded-lg px-4 py-2 text-lg">
+        </div>
+        <div>
+          <label for="setup-retainer" class="block text-sm font-medium text-gray-700 mb-1">Monthly retainer hours</label>
+          <input id="setup-retainer" type="number" step="0.5" min="0" placeholder="e.g. 42" class="w-full border border-gray-300 rounded-lg px-4 py-2 text-lg">
+        </div>
+        <div>
+          <label for="setup-current-hours" class="block text-sm font-medium text-gray-700 mb-1">Current hours (rollover)</label>
+          <input id="setup-current-hours" type="number" step="0.5" min="0" placeholder="e.g. 27.5" class="w-full border border-gray-300 rounded-lg px-4 py-2 text-lg">
+        </div>
+      </div>
+      <button id="setup-save" class="mt-6 w-full bg-indigo-700 text-white py-3 rounded-lg font-medium">Save and continue</button>
+    </div>
+  </div>
+
+  <div id="dashboard" class="max-w-2xl mx-auto hidden">
+
+    <!-- Summary card -->
+    <div class="card bg-white rounded-3xl p-8">
+      <h2 class="text-2xl font-semibold mb-6">Summary</h2>
+      <div class="space-y-4 text-lg">
+        <div class="flex justify-between"><span>Monthly retainer: <span id="retainer-display">—</span> hours</span></div>
+        <div class="flex justify-between items-center">
+          <span>Rollover from <span id="prev-month">February</span>:</span>
+          <input id="rollover-input" type="text" value="0" class="w-20 text-right bg-gray-100 rounded px-3 py-1 text-lg font-medium">
+          <span class="text-sm text-gray-500">hours</span>
+        </div>
+      </div>
+      <div class="mt-8 pt-8 border-t border-dashed">
+        <div class="text-4xl font-bold text-center text-indigo-700" id="total-available">69 Hours 30 Mins</div>
+        <div class="text-center text-sm text-gray-500 mt-1">Total for <span id="current-month">March</span></div>
+      </div>
+      <div class="mt-6 text-center">
+        <span class="text-2xl font-semibold text-green-600" id="hours-remaining">43 Hours 30 Mins</span>
+        <span class="block text-xs text-gray-500">remaining this month</span>
+      </div>
+      <div class="mt-6 pt-6 border-t border-gray-100 flex justify-center gap-3">
+        <button id="refresh-button" class="bg-indigo-700 text-white px-4 py-2 rounded-md text-sm">Refresh</button>
+        <button id="settings-button" class="text-indigo-700 px-4 py-2 rounded-md border border-indigo-700 text-sm">Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CONFIG_KEY = 'clickuptimes_config';
+    const LAST_TOTAL_KEY = 'clickuptimes_lastTotal';
+    const LAST_TOTAL_MONTH_KEY = 'clickuptimes_lastTotalMonth';
+
+    function getSimulatedMonthStr() {
+      var m = new URLSearchParams(window.location.search).get('simulate_month');
+      if (!m || !/^\d{4}-\d{2}$/.test(m)) return null;
+      return m;
+    }
+    function currentMonthStr() {
+      return getSimulatedMonthStr() || (new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0'));
+    }
+    const now = new Date();
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    let month_start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+    let month_end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+
+    const teamId = '20400171';
+    const authHeader = { accept: 'application/json', Authorization: 'pk_50655528_3I0JRZSSUMKEWK1R3K5OVYAP12PS2Z5M' };
+
+    function getConfig() {
+      try {
+        const s = localStorage.getItem(CONFIG_KEY);
+        return s ? JSON.parse(s) : null;
+      } catch (e) { return null; }
+    }
+    function saveConfig(c) {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
+    }
+
+    function showSetup() {
+      document.getElementById('setup-section').classList.remove('hidden');
+      document.getElementById('dashboard').classList.add('hidden');
+    }
+    function showDashboard() {
+      document.getElementById('setup-section').classList.add('hidden');
+      document.getElementById('dashboard').classList.remove('hidden');
+    }
+
+    function msToHours(ms) { return ms / 3600000; }
+    function formatHoursMins(hours) {
+      const h = Math.floor(hours);
+      const m = Math.round((hours - h) * 60);
+      if (m === 0) return h + ' Hour' + (h !== 1 ? 's' : '');
+      return h + ' Hour' + (h !== 1 ? 's' : '') + ' ' + m + ' Min' + (m !== 1 ? 's' : '');
+    }
+
+    let currentMonthTrackedMs = 0;
+
+    (function setMonthLabels() {
+      var sim = getSimulatedMonthStr();
+      var monthIdx = sim
+        ? parseInt(sim.split('-')[1], 10) - 1
+        : now.getMonth();
+      var prevIdx = monthIdx === 0 ? 11 : monthIdx - 1;
+      document.getElementById('current-month').textContent = monthNames[monthIdx];
+      document.getElementById('prev-month').textContent = monthNames[prevIdx];
+      if (sim) {
+        var banner = document.getElementById('simulate-banner');
+        if (banner) {
+          banner.textContent = 'Simulating month: ' + monthNames[monthIdx] + ' ' + sim.split('-')[0];
+          banner.classList.remove('hidden');
+          document.body.style.paddingTop = '3rem';
+        }
+      }
+    })();
+
+    function updateSummary(rolloverHours, trackedMs) {
+      const config = getConfig();
+      const monthlyRetainer = (config && config.monthlyRetainer != null) ? Number(config.monthlyRetainer) : 0;
+      const rollover = typeof rolloverHours === 'number' ? rolloverHours : parseFloat(document.getElementById('rollover-input').value) || 0;
+      const totalAvailable = monthlyRetainer + rollover;
+      const trackedHours = msToHours(trackedMs);
+      const remaining = Math.max(0, totalAvailable - trackedHours);
+      document.getElementById('total-available').textContent = formatHoursMins(totalAvailable);
+      document.getElementById('hours-remaining').textContent = formatHoursMins(remaining);
+      localStorage.setItem(LAST_TOTAL_KEY, String(totalAvailable));
+      localStorage.setItem(LAST_TOTAL_MONTH_KEY, currentMonthStr());
+    }
+
+    function fetchTimeEntries(listId, start, end, assigneeParam) {
+      const url = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?start_date=${start}&end_date=${end}&list_id=${listId}${assigneeParam}`;
+      return $.ajax({ async: true, crossDomain: true, url, method: 'GET', headers: authHeader });
+    }
+
+    function loadData() {
+      const config = getConfig();
+      if (!config || !config.listId) return;
+      var listId = String(config.listId).trim();
+      document.getElementById('retainer-display').textContent = config.monthlyRetainer != null ? config.monthlyRetainer : '—';
+
+      $.ajax({
+        async: true,
+        crossDomain: true,
+        url: `https://api.clickup.com/api/v2/list/${listId}/member?include_inherited=true`,
+        method: 'GET',
+        headers: authHeader
+      }).then(function(membersRes) {
+        const members = membersRes.members || membersRes || [];
+        const assigneeIds = members.map(function(m) { return (m.user && m.user.id) || m.id; }).filter(Boolean);
+        const assigneeParam = assigneeIds.length ? '&assignee=' + assigneeIds.join(',') : '';
+        return fetchTimeEntries(listId, month_start, month_end, assigneeParam);
+      }).then(function(res) {
+        var curr_ms = 0;
+        (res && res.data ? res.data : []).forEach(function(entry) { curr_ms += Number(entry.duration); });
+        currentMonthTrackedMs = curr_ms;
+        updateSummary(undefined, curr_ms);
+      }).fail(function(err) {
+        console.error(err);
+        var rollover = parseFloat(document.getElementById('rollover-input').value) || 0;
+        updateSummary(rollover, currentMonthTrackedMs);
+      });
+    }
+
+    document.getElementById('rollover-input').addEventListener('input', function() {
+      updateSummary(undefined, currentMonthTrackedMs);
+    });
+    document.getElementById('rollover-input').addEventListener('change', function() {
+      var config = getConfig();
+      if (config) {
+        var val = parseFloat(document.getElementById('rollover-input').value);
+        config.rolloverHours = isNaN(val) || val < 0 ? 0 : Math.round(val * 10) / 10;
+        saveConfig(config);
+      }
+    });
+
+    document.getElementById('setup-save').addEventListener('click', function() {
+      var listId = document.getElementById('setup-list-id').value.trim();
+      var retainer = parseFloat(document.getElementById('setup-retainer').value);
+      var currentHours = parseFloat(document.getElementById('setup-current-hours').value);
+      if (!listId) { alert('Please enter a List ID.'); return; }
+      if (isNaN(retainer) || retainer < 0) retainer = 0;
+      if (isNaN(currentHours) || currentHours < 0) currentHours = 0;
+      saveConfig({ listId: listId, monthlyRetainer: retainer, rolloverHours: currentHours });
+      document.getElementById('rollover-input').value = currentHours;
+      showDashboard();
+      loadData();
+    });
+
+    document.getElementById('settings-button').addEventListener('click', function() {
+      var c = getConfig();
+      if (c) {
+        document.getElementById('setup-list-id').value = c.listId || '';
+        document.getElementById('setup-retainer').value = c.monthlyRetainer != null ? c.monthlyRetainer : '';
+        document.getElementById('setup-current-hours').value = document.getElementById('rollover-input').value || (c.rolloverHours != null ? c.rolloverHours : '');
+      }
+      showSetup();
+    });
+
+    document.getElementById('refresh-button').addEventListener('click', loadData);
+
+    (function init() {
+      var config = getConfig();
+      if (config && config.listId) {
+        var rolloverVal = config.rolloverHours != null ? config.rolloverHours : 0;
+        var lastMonth = localStorage.getItem(LAST_TOTAL_MONTH_KEY);
+        var lastTotal = parseFloat(localStorage.getItem(LAST_TOTAL_KEY));
+        var monthNow = currentMonthStr();
+        if (lastMonth && lastMonth < monthNow && !isNaN(lastTotal)) {
+          rolloverVal = Math.round(lastTotal * 10) / 10;
+          config.rolloverHours = rolloverVal;
+          saveConfig(config);
+        }
+        document.getElementById('rollover-input').value = rolloverVal;
+        showDashboard();
+        document.getElementById('retainer-display').textContent = config.monthlyRetainer != null ? config.monthlyRetainer : '—';
+        loadData();
+      } else {
+        showSetup();
+      }
+    })();
+  </script>
+</body>
+</html>
