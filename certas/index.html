@@ -11,31 +11,37 @@
     .card { box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.08); }
   </style>
 </head>
-<body class="bg-gray-50 p-6">
+<body class="bg-gray-50 p-4">
   <div id="simulate-banner" class="hidden fixed top-0 left-0 right-0 bg-amber-200 text-amber-900 text-center py-2 text-sm font-medium z-10"></div>
-  <div id="dashboard" class="max-w-2xl mx-auto">
+  <div id="dashboard" class="max-w-md mx-auto">
 
     <!-- Summary card -->
-    <div class="card bg-white rounded-3xl p-8">
-      <h2 class="text-2xl font-semibold mb-6">Summary</h2>
-      <div class="space-y-4 text-lg">
-        <div class="flex justify-between"><span>Monthly retainer: <span id="retainer-display">—</span> hours</span></div>
-        <div class="flex justify-between items-center">
-          <span>Rollover from <span id="prev-month">February</span>:</span>
-          <input id="rollover-input" type="text" value="0" class="w-20 text-right bg-gray-100 rounded px-3 py-1 text-lg font-medium">
-          <span class="text-sm text-gray-500">hours</span>
+    <div class="card bg-white rounded-2xl p-6 space-y-4">
+      <h2 class="text-xl font-semibold">Summary</h2>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <span>Monthly retainer</span>
+          <span><span id="retainer-display">—</span> hrs</span>
+        </div>
+        <div class="flex justify-between">
+          <span>Rollover from <span id="prev-month">February</span></span>
+          <span><span id="rollover-display">0</span> hrs</span>
+        </div>
+        <div class="flex justify-between">
+          <span>Hours tracked this month</span>
+          <span><span id="tracked-time">00:00:00</span></span>
         </div>
       </div>
-      <div class="mt-8 pt-8 border-t border-dashed">
-        <div class="text-4xl font-bold text-center text-indigo-700" id="total-available">69 Hours 30 Mins</div>
-        <div class="text-center text-sm text-gray-500 mt-1">Total for <span id="current-month">March</span></div>
+      <div class="pt-4 border-t border-dashed">
+        <div class="text-2xl font-bold text-center text-indigo-700" id="total-available">69 Hours 30 Mins</div>
+        <div class="text-center text-xs text-gray-500 mt-1">Total for <span id="current-month">March</span></div>
       </div>
-      <div class="mt-6 text-center">
-        <span class="text-2xl font-semibold text-green-600" id="hours-remaining">43 Hours 30 Mins</span>
-        <span class="block text-xs text-gray-500">remaining this month</span>
+      <div class="mt-3 text-center">
+        <span class="text-lg font-semibold text-green-600" id="hours-remaining">43 Hours 30 Mins</span>
+        <span class="block text-[11px] text-gray-500">remaining this month</span>
       </div>
-      <div class="mt-6 pt-6 border-t border-gray-100 flex justify-center gap-3">
-        <button id="refresh-button" class="bg-indigo-700 text-white px-4 py-2 rounded-md text-sm">Refresh</button>
+      <div class="mt-4 pt-3 border-t border-gray-100 flex justify-center">
+        <button id="refresh-button" class="bg-indigo-700 text-white px-3 py-2 rounded-md text-xs">Refresh</button>
       </div>
     </div>
   </div>
@@ -66,6 +72,13 @@
     const authHeader = { accept: 'application/json', Authorization: 'pk_50655528_3I0JRZSSUMKEWK1R3K5OVYAP12PS2Z5M' };
 
     function msToHours(ms) { return ms / 3600000; }
+    function formatHMMSS(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+    }
     function formatHoursMins(hours) {
       const h = Math.floor(hours);
       const m = Math.round((hours - h) * 60);
@@ -74,6 +87,7 @@
     }
 
     let currentMonthTrackedMs = 0;
+    let currentRolloverHours = Number(INITIAL_ROLLOVER_HOURS) || 0;
 
     (function setMonthLabels() {
       var sim = getSimulatedMonthStr();
@@ -94,7 +108,10 @@
     })();
 
     function updateSummary(rolloverHours, trackedMs) {
-      const rollover = typeof rolloverHours === 'number' ? rolloverHours : (parseFloat(document.getElementById('rollover-input').value) || 0);
+      if (typeof rolloverHours === 'number') {
+        currentRolloverHours = rolloverHours;
+      }
+      const rollover = currentRolloverHours;
       const totalAvailable = Number(MONTHLY_RETAINER_HOURS) + rollover;
       const trackedHours = msToHours(trackedMs);
       const remaining = Math.max(0, totalAvailable - trackedHours);
@@ -128,17 +145,13 @@
         var curr_ms = 0;
         (res && res.data ? res.data : []).forEach(function(entry) { curr_ms += Number(entry.duration); });
         currentMonthTrackedMs = curr_ms;
+        document.getElementById('tracked-time').textContent = formatHMMSS(curr_ms);
         updateSummary(undefined, curr_ms);
       }).fail(function(err) {
         console.error(err);
-        var rollover = parseFloat(document.getElementById('rollover-input').value) || 0;
-        updateSummary(rollover, currentMonthTrackedMs);
+        updateSummary(currentRolloverHours, currentMonthTrackedMs);
       });
     }
-
-    document.getElementById('rollover-input').addEventListener('input', function() {
-      updateSummary(undefined, currentMonthTrackedMs);
-    });
 
     document.getElementById('refresh-button').addEventListener('click', loadData);
 
@@ -150,7 +163,8 @@
       if (lastMonth && lastMonth < monthNow && !isNaN(lastTotal)) {
         rolloverVal = Math.round(lastTotal * 10) / 10;
       }
-      document.getElementById('rollover-input').value = rolloverVal;
+      currentRolloverHours = rolloverVal;
+      document.getElementById('rollover-display').textContent = String(rolloverVal);
       document.getElementById('retainer-display').textContent = String(MONTHLY_RETAINER_HOURS);
       loadData();
     })();
