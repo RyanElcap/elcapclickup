@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Police Friendly Summary</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .card { box-shadow: 0 3px 14px -4px rgb(0 0 0 / 0.12); }
+  </style>
+</head>
+<body class="bg-gray-50 p-4">
+  <div id="simulate-banner" class="hidden fixed top-0 left-0 right-0 bg-amber-200 text-amber-900 text-center py-2 text-sm font-medium z-10"></div>
+  <div id="dashboard" class="max-w-sm mx-auto">
+
+    <!-- Summary card -->
+    <div class="card bg-white rounded-2xl px-5 py-4 space-y-3">
+      <div class="space-y-1.5 text-xs">
+        <div class="flex justify-between gap-4">
+          <span class="text-gray-600">Monthly retainer</span>
+          <span class="font-medium"><span id="retainer-display">—</span> hrs</span>
+        </div>
+        <div class="flex justify-between gap-4">
+          <span class="text-gray-600">Rollover from <span id="prev-month">February</span></span>
+          <span class="font-medium"><span id="rollover-display">0</span> hrs</span>
+        </div>
+        <div class="flex justify-between gap-4">
+          <span class="text-gray-600">Tracked this month</span>
+          <span class="font-mono text-[11px]" id="tracked-time">00:00:00</span>
+        </div>
+      </div>
+      <div class="pt-3 border-t border-dashed">
+        <div class="text-xl font-bold text-center text-indigo-700 leading-tight" id="total-available">69 Hours 30 Mins</div>
+        <div class="text-center text-[11px] text-gray-500 mt-0.5">Total for <span id="current-month">March</span></div>
+      </div>
+      <div class="mt-2 text-center">
+        <span class="text-sm font-semibold text-green-600" id="hours-remaining">43 Hours 30 Mins</span>
+        <span class="block text-[10px] text-gray-500">remaining this month</span>
+      </div>
+      <div class="mt-3 pt-2 border-t border-gray-100 flex justify-end">
+        <button id="refresh-button" class="bg-indigo-700 text-white px-2.5 py-1.5 rounded-md text-[10px]">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const LAST_TOTAL_KEY = 'clickuptimes_lastTotal';
+    const LAST_TOTAL_MONTH_KEY = 'clickuptimes_lastTotalMonth';
+
+    // Hardcoded defaults (shared by everyone viewing this page)
+    const LIST_ID = '901209241291';
+    const MONTHLY_RETAINER_HOURS = 20; // set this to your monthly total
+    const INITIAL_ROLLOVER_HOURS = 0;  // starting rollover if no prior total stored
+
+    function getSimulatedMonthStr() {
+      var m = new URLSearchParams(window.location.search).get('simulate_month');
+      if (!m || !/^\d{4}-\d{2}$/.test(m)) return null;
+      return m;
+    }
+    function currentMonthStr() {
+      return getSimulatedMonthStr() || (new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0'));
+    }
+    const now = new Date();
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    let month_start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+    let month_end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+
+    const teamId = '20400171';
+    const authHeader = { accept: 'application/json', Authorization: 'pk_50655528_3I0JRZSSUMKEWK1R3K5OVYAP12PS2Z5M' };
+
+    function msToHours(ms) { return ms / 3600000; }
+    function formatHMMSS(ms) {
+      const totalSec = Math.floor(ms / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+    }
+    function formatHoursMins(hours) {
+      const h = Math.floor(hours);
+      const m = Math.round((hours - h) * 60);
+      if (m === 0) return h + ' Hour' + (h !== 1 ? 's' : '');
+      return h + ' Hour' + (h !== 1 ? 's' : '') + ' ' + m + ' Min' + (m !== 1 ? 's' : '');
+    }
+
+    let currentMonthTrackedMs = 0;
+    let currentRolloverHours = Number(INITIAL_ROLLOVER_HOURS) || 0;
+
+    (function setMonthLabels() {
+      var sim = getSimulatedMonthStr();
+      var monthIdx = sim
+        ? parseInt(sim.split('-')[1], 10) - 1
+        : now.getMonth();
+      var prevIdx = monthIdx === 0 ? 11 : monthIdx - 1;
+      document.getElementById('current-month').textContent = monthNames[monthIdx];
+      document.getElementById('prev-month').textContent = monthNames[prevIdx];
+      if (sim) {
+        var banner = document.getElementById('simulate-banner');
+        if (banner) {
+          banner.textContent = 'Simulating month: ' + monthNames[monthIdx] + ' ' + sim.split('-')[0];
+          banner.classList.remove('hidden');
+          document.body.style.paddingTop = '3rem';
+        }
+      }
+    })();
+
+    function updateSummary(rolloverHours, trackedMs) {
+      if (typeof rolloverHours === 'number') {
+        currentRolloverHours = rolloverHours;
+      }
+      const rollover = currentRolloverHours;
+      const totalAvailable = Number(MONTHLY_RETAINER_HOURS) + rollover;
+      const trackedHours = msToHours(trackedMs);
+      const remaining = Math.max(0, totalAvailable - trackedHours);
+      document.getElementById('total-available').textContent = formatHoursMins(totalAvailable);
+      document.getElementById('hours-remaining').textContent = formatHoursMins(remaining);
+      localStorage.setItem(LAST_TOTAL_KEY, String(totalAvailable));
+      localStorage.setItem(LAST_TOTAL_MONTH_KEY, currentMonthStr());
+    }
+
+    function fetchTimeEntries(listId, start, end, assigneeParam) {
+      const url = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?start_date=${start}&end_date=${end}&list_id=${listId}${assigneeParam}`;
+      return $.ajax({ async: true, crossDomain: true, url, method: 'GET', headers: authHeader });
+    }
+
+    function loadData() {
+      var listId = String(LIST_ID).trim();
+      document.getElementById('retainer-display').textContent = String(MONTHLY_RETAINER_HOURS);
+
+      $.ajax({
+        async: true,
+        crossDomain: true,
+        url: `https://api.clickup.com/api/v2/list/${listId}/member?include_inherited=true`,
+        method: 'GET',
+        headers: authHeader
+      }).then(function(membersRes) {
+        const members = membersRes.members || membersRes || [];
+        const assigneeIds = members.map(function(m) { return (m.user && m.user.id) || m.id; }).filter(Boolean);
+        const assigneeParam = assigneeIds.length ? '&assignee=' + assigneeIds.join(',') : '';
+        return fetchTimeEntries(listId, month_start, month_end, assigneeParam);
+      }).then(function(res) {
+        var curr_ms = 0;
+        (res && res.data ? res.data : []).forEach(function(entry) { curr_ms += Number(entry.duration); });
+        currentMonthTrackedMs = curr_ms;
+        document.getElementById('tracked-time').textContent = formatHMMSS(curr_ms);
+        updateSummary(undefined, curr_ms);
+      }).fail(function(err) {
+        console.error(err);
+        updateSummary(currentRolloverHours, currentMonthTrackedMs);
+      });
+    }
+
+    document.getElementById('refresh-button').addEventListener('click', loadData);
+
+    (function init() {
+      var rolloverVal = Number(INITIAL_ROLLOVER_HOURS) || 0;
+      var lastMonth = localStorage.getItem(LAST_TOTAL_MONTH_KEY);
+      var lastTotal = parseFloat(localStorage.getItem(LAST_TOTAL_KEY));
+      var monthNow = currentMonthStr();
+      if (lastMonth && lastMonth < monthNow && !isNaN(lastTotal)) {
+        rolloverVal = Math.round(lastTotal * 10) / 10;
+      }
+      currentRolloverHours = rolloverVal;
+      document.getElementById('rollover-display').textContent = String(rolloverVal);
+      document.getElementById('retainer-display').textContent = String(MONTHLY_RETAINER_HOURS);
+      loadData();
+    })();
+  </script>
+</body>
+</html>
