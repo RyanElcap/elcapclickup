@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Next Summary</title>
+  <title>Plus x Summary</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <style>
@@ -51,8 +51,8 @@
 
     // Hardcoded defaults (shared by everyone viewing this page)
     const LIST_ID = '901209893562';
-    const MONTHLY_RETAINER_HOURS = 4; // set this to your monthly total
-    const INITIAL_ROLLOVER_HOURS = 0;  // starting rollover if no prior total stored
+    const MONTHLY_RETAINER_HOURS = 10; // set this to your monthly total
+    const INITIAL_ROLLOVER_HOURS = 60;  // starting rollover if no prior total stored
 
     function getSimulatedMonthStr() {
       var m = new URLSearchParams(window.location.search).get('simulate_month');

@@ -51,8 +51,8 @@
 
     // Hardcoded defaults (shared by everyone viewing this page)
     const LIST_ID = '901204572147';
-    const MONTHLY_RETAINER_HOURS = 10; // set this to your monthly total
-    const INITIAL_ROLLOVER_HOURS = 60;  // starting rollover if no prior total stored
+    const MONTHLY_RETAINER_HOURS = 4; // set this to your monthly total
+    const INITIAL_ROLLOVER_HOURS = 0;  // starting rollover if no prior total stored
 
     function getSimulatedMonthStr() {
       var m = new URLSearchParams(window.location.search).get('simulate_month');
